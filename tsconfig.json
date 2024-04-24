@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "extends": "@electron-toolkit/tsconfig/tsconfig.node.json",
+  "include": ["electron.vite.config.*", "**/*.ts", "**/*.tsx"],
+  "compilerOptions": {
+    "composite": true,
+    "types": ["electron-vite/node"],
+    "paths": {
+      "@util/*": ["./util/src/*"]
+    }
+  }
+}
