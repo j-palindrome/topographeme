@@ -22,8 +22,10 @@ uniform vec2 u_resolution;
 uniform float u_strength;
 uniform sampler2D u_textTexture;
 uniform sampler2D u_videoTexture;
+uniform float angle;
 
 #define PI 3.14159
+#define TWO_PI 6.28318
 
 vec2 posToUv(vec2 pos) {
   vec2 flipped = (pos + 1.0f) * 0.5f;
@@ -45,9 +47,9 @@ void main() {
   vec4 textSample = texture(u_textTexture, uv);
   vec4 textFrontSample = texture(u_textTexture, mod(uv + u_circleSize * normVel, 1.0f));
   if(textFrontSample.a > textSample.a) {
-    normVel = rotate(normVel, u_strength);
+    normVel = rotate(normVel, u_strength + angle * TWO_PI);
   } else if(textFrontSample.a < textSample.a) {
-    normVel = rotate(normVel, u_strength * -1.0f);
+    normVel = rotate(normVel, u_strength * -1.0f - angle * TWO_PI);
   }
 
   a_speedOut = (1.0f - pow(speedSample.a, 1.0f / (pow(u_strength, 2.0f) * u_resolution.x / 8.0f))) * u_speed * (u_resolution.x / 60.0f);

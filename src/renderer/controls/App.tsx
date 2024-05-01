@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+
 const Container = ({ title, children }: React.PropsWithChildren & { title: string }) => {
   return (
     <div>
@@ -12,16 +14,38 @@ export default function App() {
     window.electron.ipcRenderer.send('set', newState)
   }
 
+  const [text, setText] = useState('')
+  const [speed, setSpeed] = useState(0)
+  const [circleSize, setCircleSize] = useState(0)
+  const [strength, setStrength] = useState(0.1)
+  const [lock, setLock] = useState(false)
+  const [rotate, setRotate] = useState(0)
+  const [translate, setTranslate] = useState(0)
+  const updateAll = () => {
+    update({
+      speed: speed ** 2,
+      circleSize: circleSize ** 3,
+      strength: strength ** 5,
+      rotate,
+      translate: translate ** 2
+    })
+  }
+  useEffect(() => {
+    if (lock) return
+    updateAll()
+  }, [lock, speed, circleSize, strength, translate, rotate])
   return (
-    <div>
+    <div className="text-white font-mono">
+      <button onClick={() => setLock(!lock)}>{lock ? 'unlock' : 'lock'}</button>
       <Container title="speed">
         <input
           type="range"
-          max={1}
+          value={speed}
+          max={5}
           step={0.01}
           className="w-full max-w-[300px]"
           onChange={(ev) => {
-            update({ speed: Number(ev.target.value) })
+            setSpeed(Number(ev.target.value))
           }}
         ></input>
       </Container>
@@ -29,10 +53,11 @@ export default function App() {
         <input
           type="range"
           max={1}
+          min={0.0001}
           step={0.01}
           className="w-full max-w-[300px]"
           onChange={(ev) => {
-            update({ circleSize: Number(ev.target.value) })
+            setCircleSize(Number(ev.target.value))
           }}
         ></input>
       </Container>
@@ -40,23 +65,119 @@ export default function App() {
         <input
           type="range"
           max={1}
+          min={0.001}
           step={0.01}
+          value={strength}
           className="w-full max-w-[300px]"
           onChange={(ev) => {
-            update({ strength: Number(ev.target.value) })
+            setStrength(Number(ev.target.value))
           }}
         ></input>
       </Container>
-      <Container title="strength">
+      <Container title="translate">
         <input
           max={1}
+          type="range"
           step={0.01}
           className="w-full max-w-[300px]"
           onChange={(ev) => {
-            update({ text: ev.target.value })
+            setTranslate(Number(ev.target.value))
           }}
         ></input>
       </Container>
+      <Container title="rotate">
+        <input
+          max={1}
+          type="range"
+          step={0.01}
+          className="w-full max-w-[300px]"
+          onChange={(ev) => {
+            setRotate(Number(ev.target.value))
+          }}
+        ></input>
+      </Container>
+      <Container title="text">
+        <input
+          value={text}
+          className="w-full max-w-[300px] text-black"
+          onChange={(ev) => {
+            setText(ev.target.value)
+          }}
+        ></input>
+        <button
+          onClick={() => {
+            update({
+              text
+            })
+            updateAll()
+          }}
+        >
+          set
+        </button>
+      </Container>
+      <Container title="text opacity">
+        <input
+          max={1}
+          type="range"
+          step={0.01}
+          className="w-full max-w-[300px]"
+          onChange={(ev) => {
+            update({ textOpacity: Number(ev.target.value) })
+          }}
+        ></input>
+      </Container>
+      <Container title="lowpass">
+        <input
+          max={1}
+          type="range"
+          step={0.01}
+          className="w-full max-w-[300px]"
+          onChange={(ev) => {
+            update({ lowpass: Number(ev.target.value) })
+          }}
+        ></input>
+      </Container>
+      <Container title="particle opacity">
+        <input
+          max={1}
+          type="range"
+          step={0.01}
+          className="w-full max-w-[300px]"
+          onChange={(ev) => {
+            update({ opacity: Number(ev.target.value) })
+          }}
+        ></input>
+      </Container>
+      <Container title="angle">
+        <input
+          max={1}
+          type="range"
+          step={0.01}
+          className="w-full max-w-[300px]"
+          onChange={(ev) => {
+            update({ angle: Number(ev.target.value) })
+          }}
+        ></input>
+      </Container>
+      <Container title="volume">
+        <input
+          max={1}
+          type="range"
+          step={0.01}
+          className="w-full max-w-[300px]"
+          onChange={(ev) => {
+            update({ volume: Number(ev.target.value) })
+          }}
+        ></input>
+      </Container>
+
+      <button
+        onClick={() => {
+          update({ setSample: 1 })
+        }}
+      >
+        resample
+      </button>
     </div>
   )
 }

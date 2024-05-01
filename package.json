@@ -26,6 +26,8 @@
     "@elemaudio/core": "^3.2.1",
     "@elemaudio/web-renderer": "^3.2.3",
     "@react-three/fiber": "^8.16.2",
+    "@types/lodash": "^4.17.0",
+    "@types/p5": "^1.7.6",
     "autoprefixer": "^10.4.19",
     "electron-updater": "^6.1.7",
     "file-saver": "^2.0.5",

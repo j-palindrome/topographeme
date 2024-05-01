@@ -10,6 +10,7 @@ uniform vec2 u_resolution;
 uniform sampler2D u_videoTexture;
 uniform sampler2D u_videoLayersTexture;
 uniform float mix;
+uniform float opacity;
 
 void main() {
 
@@ -17,6 +18,5 @@ void main() {
     discard;
 
   // fragColor = vec4(1.0f, 1.0f, 1.0f, (1.0f - texture(u_textTexture, uv).a) * 0.3f);
-  fragColor = vec4(1.0f, 1.0f, 1.0f, 0.2f);
-
+  fragColor = vec4(1.0f, 1.0f, 1.0f, max(texture(u_textTexture, uv).a, opacity));
 }

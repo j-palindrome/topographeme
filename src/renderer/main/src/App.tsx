@@ -1,32 +1,53 @@
 import type { NodeRepr_t } from '@elemaudio/core'
 import { el } from '@elemaudio/core'
 import { useAnimation } from '@util/animation'
+import { useSlider } from '@util/dom'
+import { mtof, rad, scale } from '@util/math'
+import { PixelArray } from '@util/pixels'
 import { generateContexts } from '@util/setups'
 import _ from 'lodash'
-import type { default as pInstance } from 'p5'
 import { useEffect, useRef, useState } from 'react'
 import * as twgl from 'twgl.js'
 import fragmentShader from './f.frag?raw'
 import { keys } from './util/scaling'
 import vertexShader from './v.vert?raw'
-import { mtof, rad, scale } from '@util/math'
-import { PixelArray } from '@util/pixels'
-import { create } from '@util/formattings'
-import { useEventListener, useSlider } from '@util/dom'
+
+const Container = ({ title, children }: React.PropsWithChildren & { title: string }) => {
+  return (
+    <div>
+      <h2 className="font-sans text-white">{title}</h2>
+      {children}
+    </div>
+  )
+}
 
 export default function Scene() {
-  const state = useRef<AppState>({ speed: 1, circleSize: 0.5, strength: 1, text: '' })
-  const [typedText, setTypedText] = useState('')
+  const state = useRef<AppState>({
+    speed: 1,
+    circleSize: 0.5,
+    strength: 1,
+    text: '',
+    textOpacity: 0,
+    rotation: 1,
+    lowpass: 1,
+    setSample: 0,
+    opacity: 1,
+    angle: 0,
+    volume: 1,
+    translate: 0,
+    rotate: 0
+  })
   useEffect(() => {
     window.electron.ipcRenderer.on('set', (_event, newState: Partial<AppState>) => {
-      console.log('new state:', newState)
       state.current = { ...state.current, ...newState }
-      if (typeof newState.text === 'string') {
-        setTypedText(newState.text)
+      if (typeof newState.textOpacity !== 'undefined') {
+        textFrame.current.style.opacity = `${newState.textOpacity}`
       }
     })
+    textFrame.current.style.opacity = `${state.current.textOpacity}`
   }, [])
   const [animating, setAnimating] = useState(false)
+  const [sample, setSample] = useState(0)
   const frame = useRef<HTMLCanvasElement>(null!)
   const textFrame = useRef<HTMLCanvasElement>(null!)
 
@@ -167,36 +188,14 @@ export default function Scene() {
     return { tex, array }
   }
 
-  const setup4 = ({ gl, p5 }: { gl: WebGL2RenderingContext; p5: any }) => {
-    const canvas = textFrame.current
-
-    const pInstance: pInstance = new p5((p: pInstance) => {
-      p.createCanvas(gl.canvas.width, gl.canvas.height, p.P2D, canvas)
-      p.colorMode(p.HSL, 1)
-
-      // p.background(create(p.color('gray'), e => e.setAlpha(0.5)))
-      p.textAlign('center')
-      p.fill('white')
-      p.noStroke()
-      p.textSize(100)
-      p.textStyle(p.BOLD)
-      // p.scale(1.0, 4.0)
-    })
-
-    const textTexture = twgl.createTexture(gl, {
-      width: canvas.width,
-      height: canvas.height
-    })
-    return { textTexture, pInstance, canvas }
-  }
-
   const [scene, setScene] = useState(0)
 
+  let lastTime = 0
   const props = useAnimation(
     animating,
     async () => {
       const contexts = await generateContexts(frame.current, {})
-      const { gl, p5 } = contexts
+      const { gl } = contexts
 
       const part1 = setup1({ gl })
       const part2 = setup2({
@@ -205,49 +204,36 @@ export default function Scene() {
         tfBufferInfo2: part1.tfBufferInfo2
       })
       const part3 = setup3({ gl })
-      const part4 = setup4({ gl, p5 })
 
-      const setup5 = async () => {
-        const videoCanvas = document.createElement('video')
-        videoCanvas.height = 480
-        videoCanvas.width = 640
-        navigator.mediaDevices.getUserMedia({ video: true }).then(function (stream) {
-          videoCanvas.srcObject = stream
-          videoCanvas.play()
-        })
-        const videoTexture = twgl.createTexture(gl, {
-          width: videoCanvas.width,
-          height: videoCanvas.height
-        })
-        const videoLayersTexture = twgl.createTexture(gl, {
-          width: videoCanvas.width,
-          height: videoCanvas.height
-        })
-        const videoLayersCanvas = create(document.createElement('canvas'), (e) => {
-          e.height = videoCanvas.height
-          e.width = videoCanvas.width
-        }).getContext('2d')!
-
+      const setupText = () => {
+        const layer = textFrame.current
+        layer.height = 1080
+        layer.width = 1080
+        const ctx = layer.getContext('2d')!
+        ctx.textAlign = 'center'
+        ctx.fillStyle = 'white'
+        ctx.strokeStyle = 'transparent'
         return {
-          videoCanvas,
-          videoTexture,
-          videoLayersCanvas,
-          videoLayersTexture
+          ctx,
+          textTexture: twgl.createTexture(gl, {
+            width: layer.width,
+            height: layer.height
+          })
         }
       }
-
       return {
         ...contexts,
         ...part1,
         ...part2,
         ...part3,
-        ...part4,
-        ...(await setup5()),
-        text: ''
+        text: setupText(),
+        sound: {
+          sample: 0
+        }
       }
     },
     (
-      { time, timeDelta },
+      time,
       {
         gl,
         core,
@@ -258,14 +244,11 @@ export default function Scene() {
         tex,
         sets,
         feedbackProgramInfo,
-        textTexture,
-        videoCanvas,
-        videoTexture,
-        videoLayersTexture
+        text,
+        sound: { sample }
       }
     ) => {
       const visuals = () => {
-        twgl.setTextureFromElement(gl, videoTexture, videoCanvas)
         gl.viewport(0, 0, gl.canvas.width, gl.canvas.height)
 
         const { feedback, tfVAInfo } = sets[setNdx]
@@ -282,16 +265,16 @@ export default function Scene() {
         gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, feedback)
         gl.beginTransformFeedback(gl.POINTS)
         twgl.setUniforms(feedbackProgramInfo, {
-          u_deltaTime: timeDelta,
+          u_deltaTime: time - lastTime,
           u_time: time,
           u_sampler: tex,
           u_circleSize: state.current.circleSize,
           u_speed: state.current.speed,
           u_resolution: [gl.canvas.width, gl.canvas.height],
           u_strength: state.current.strength,
-          u_textTexture: textTexture,
-          u_videoTexture: videoTexture,
-          u_videoLayersTexture: videoLayersTexture
+          u_textTexture: text.textTexture,
+          opacity: state.current.opacity,
+          angle: state.current.angle
         })
         twgl.drawBufferInfo(gl, tfVAInfo, gl.POINTS)
         gl.endTransformFeedback()
@@ -319,125 +302,131 @@ export default function Scene() {
         gl.getBufferSubData(gl.TRANSFORM_FEEDBACK_BUFFER, 0, pan)
       }
       visuals()
-      const speedChange = speeds.map((x, i) => previousSpeeds[i] - x)
-      const change = (_.sum(speedChange) / speeds.length) * 100
-      const averagePan = (_.sum(pan) / pan.length) * 1000
-      // TODO: scan for holes
-      const HOLE_SIZE = 16
-      const holes: { index: [number, number]; size: number }[] = []
+      const drawText = () => {
+        const { ctx } = text
+        const w = ctx.canvas.width
+        const h = ctx.canvas.height
+        ctx.resetTransform()
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
+        ctx.font = `${20}px "Andale Mono"`
+        ctx.textAlign = 'left'
+        let i = 0
+        // for (let line of fragmentShader.split('\n')) {
+        //   i++
+        //   ctx.fillText(line, 0, 0 + i * 20)
+        // }
+        // for (let line of vertexShader.split('\n')) {
+        //   i++
+        //   ctx.fillText(line, 0, h - i * 20)
+        // }
+        ctx.textAlign = 'center'
+        // ctx.fillText(vertexShader, 0, h / 2)
+        ctx.font = `${(w * 2) / state.current.text.length}px "Andale Mono"`
+        ctx.translate(w / 2, h / 2)
 
-      let sampleStart: false | [number, number] = false
-      let averageSample = 0
-      for (let i = 0; i < array.length; i += 4) {
-        const r = array[i]
-        if (r < 30) {
-          if (sampleStart && sampleStart[0] > 10) {
-            // console.log('pushing')
-            holes.push({ index: array.indexToXy(i), size: sampleStart[0] })
+        if (state.current.text) {
+          ctx.fillStyle = 'white'
+          for (let i = 1; i < 16; i++) {
+            ctx.font = `${(w * 2) / state.current.text.length / i}px "Andale Mono"`
+            ctx.fillText(state.current.text, 0, (w * 2) / state.current.text.length / 2 / i, w)
+            ctx.translate(
+              (i % 2 ? state.current.translate : -state.current.translate * 0.87) * w,
+              0
+            )
+            ctx.rotate((i % 2 ? state.current.rotate : -state.current.rotate * 0.53) * Math.PI * 2)
           }
-          sampleStart = false
-        } else {
-          if (!sampleStart) sampleStart = [0, 0]
-          sampleStart[0]++
         }
+
+        twgl.setTextureFromElement(gl, text.textTexture, textFrame.current)
       }
+      drawText()
+      const sound = () => {
+        const speedChange = speeds.map((x, i) => previousSpeeds[i] - x)
+        const change = (_.sum(speedChange) / speeds.length) * 100
+        const averagePan = (_.sum(pan) / pan.length) * 1000
+        const averageSpeed = _.sum(speeds) / speeds.length
 
-      const maxHoles = _.sortBy(holes, 'size').slice(holes.length - 10)
-      const PAN_CHANGE_SCALE = 0.1
-      const noise = () => {
-        const signal = el.noise()
-        let delayer = (i: number, signal: NodeRepr_t, amount: number) =>
-          el.delay(
-            { size: 44100 },
-            el.ms2samps(el.const({ key: `delay-${i}`, value: amount })),
-            0.3,
-            signal
-          )
-        let start = signal
-        const letters = props.current.text.split('').map((letter) => keys.indexOf(letter))
+        const PAN_CHANGE_SCALE = 0.1
+        const noise = () => {
+          const signal = el.pinknoise()
+          let delayer = (i: number, signal: NodeRepr_t, amount: number) =>
+            el.delay(
+              { size: 44100 },
+              el.ms2samps(el.const({ key: `delay-${i}`, value: amount })),
+              0.1,
+              signal
+            )
+          let start = signal
+          const letters = state.current.text.split('').map((letter) => keys.indexOf(letter))
 
-        for (let i = Math.max(letters.length - 10, 0); i < letters.length; i++) {
-          start = delayer(i, start, 1000 / mtof(scale(letters[i], 0, 48, 30, 127)))
+          for (let i = Math.max(letters.length - 10, 0); i < letters.length; i++) {
+            start = delayer(i, start, 1000 / mtof(scale(letters[i], 0, 48, 30, 127)))
+          }
+
+          return start
         }
-        return start
-      }
-      const channel = (chan: 0 | 1) => {
-        return el.mul(
-          el.lowpass(
-            el.smooth(
-              el.tau2pole(2),
-              el.const({
-                key: 'freq',
-                value: 500 + (change < 0 ? change * 500 : change * 4000)
-              })
-            ),
-            0.1,
-            noise()
-          ),
-          // el.pinknoise()
-          el.smooth(
-            el.tau2pole(2),
-            el.const({
-              key: `${chan}:pan`,
-              value: scale(
-                averagePan,
-                chan ? 0 : PAN_CHANGE_SCALE * -1,
-                chan ? PAN_CHANGE_SCALE : 0,
-                chan,
-                (chan + 1) % 2
+        const channel = (chan: 0 | 1) => {
+          return el.mul(
+            el.mul(
+              el.lowpass(
+                el.const({ key: 'lowpass', value: mtof(state.current.lowpass * 200) }),
+                1,
+                el.lowpass(
+                  el.smooth(
+                    el.tau2pole(2),
+                    el.const({
+                      key: 'freq',
+                      value: _.clamp(500 + (change < 0 ? change * 500 : change * 4000), 100, 30000)
+                    })
+                  ),
+                  scale(averageSpeed, 0, 20, 0, 1, 2),
+                  noise()
+                )
+              ),
+              // el.pinknoise()
+              el.smooth(
+                el.tau2pole(2),
+                el.const({
+                  key: `${chan}:pan`,
+                  value: scale(
+                    averagePan,
+                    chan ? 0 : PAN_CHANGE_SCALE * -1,
+                    chan ? PAN_CHANGE_SCALE : 0,
+                    chan,
+                    (chan + 1) % 2
+                  )
+                })
               )
-            })
+            ),
+            el.const({ key: 'volume', value: state.current.volume })
           )
-        )
+        }
+        core.render(channel(0), channel(1))
       }
-      core.render(channel(0), channel(1))
+      sound()
+      lastTime = time
     },
     [
       {
-        setup: ({ videoCanvas, videoLayersCanvas, videoLayersTexture, gl }) => {
-          if (!scene) return
-          videoLayersCanvas.globalAlpha = 0.5
-          videoLayersCanvas.drawImage(videoCanvas, 0, 0)
-          twgl.setTextureFromElement(gl, videoLayersTexture, videoLayersCanvas.canvas)
-          const audios = ['1_1', '2', '3', '4', '5', '6', '7', '8']
-          new Audio(`./recordings/${audios[scene - 1]}.m4a`).play()
+        setup: ({ core, sound, soundReading: { speeds, previousSpeeds } }) => {
+          let { sample } = sound
+          sample++
+          let speedChange = speeds.map((x, i) => previousSpeeds[i] - x)
+          const maxSpeed = _.max(speedChange)!
+          speedChange = speedChange.map((x) => x / maxSpeed)
+          core.updateVirtualFileSystem({
+            [`convolution-${sample}`]: speedChange
+          })
+          console.log(speedChange)
+
+          console.log('resample', sample)
+
+          return { sound: { ...sound, sample: sample } }
         },
-        cleanup: () => {},
-        deps: [scene]
+        deps: [sample]
       }
-    ],
-    ({ canvas, pInstance }) => {
-      canvas.remove()
-      pInstance.remove()
-    }
+    ]
   )
-
-  useEffect(() => {
-    const { gl, pInstance: p, textTexture, canvas } = props.current
-    if (!p) return
-    p.push()
-    p.clear()
-    p.textAlign('center')
-    let textSize = 10
-    p.textSize(10)
-    p.translate(p.width / 2, p.height / 2 + p.textAscent() / 2)
-    p.text(typedText, 0, 0)
-
-    for (let i = 1; i < 10; i++) {
-      p.push()
-      p.rotate(((Math.PI * 2) / 10) * i)
-      p.translate((p.width / 100) * i, 0)
-      p.text(typedText, 0, 0)
-      p.pop()
-    }
-    p.pop()
-    twgl.setTextureFromElement(gl, textTexture, canvas)
-  }, [typedText])
-
-  useEffect(() => {
-    props.current.text = typedText
-  }, [typedText])
-  const [playing, setPlaying] = useState(true)
 
   const dragFrame = useRef<HTMLDivElement>(null!)
 
@@ -449,30 +438,192 @@ export default function Scene() {
     rangeRef.current = [low, high]
   })
 
+  const update = (newState: Partial<AppState>) => {
+    state.current = { ...state.current, ...newState }
+  }
+
+  const [text, setText] = useState('')
+  const [speed, setSpeed] = useState(0)
+  const [circleSize, setCircleSize] = useState(0)
+  const [strength, setStrength] = useState(0.1)
+  const [lock, setLock] = useState(false)
+  const [rotate, setRotate] = useState(0)
+  const [translate, setTranslate] = useState(0)
+  const updateAll = () => {
+    update({
+      speed: speed ** 2,
+      circleSize: circleSize ** 3,
+      strength: strength ** 5,
+      rotate,
+      translate: translate ** 2
+    })
+  }
+  useEffect(() => {
+    if (lock) return
+    updateAll()
+  }, [lock, speed, circleSize, strength, translate, rotate])
+
   return (
     <>
       <div className="h-screen w-screen" ref={dragFrame}>
         <canvas
           ref={frame}
-          className="absolute top-0 left-0 h-screen w-screen"
+          className="absolute top-0 left-[calc((100vw-100vh)/2)] h-screen aspect-square"
           height={1080}
           width={1080}
         />
         <canvas
           ref={textFrame}
+          className="absolute top-0 left-[calc((100vw-100vh)/2)] h-screen aspect-square"
           height={1080}
           width={1080}
-          className="!h-screen !w-screen absolute opacity-20 top-0 left-0 z-10"
         />
         <div className="flex absolute bottom-0 left-0 space-x-2 p-2 z-20">
           {!animating && <button onClick={() => setAnimating(true)}>START</button>}
+        </div>
+        <div className="text-white font-mono">
+          <button onClick={() => setLock(!lock)}>{lock ? 'unlock' : 'lock'}</button>
+          <Container title="speed">
+            <input
+              type="range"
+              value={speed}
+              max={5}
+              step={0.01}
+              className="w-full max-w-[300px]"
+              onChange={(ev) => {
+                setSpeed(Number(ev.target.value))
+              }}
+            ></input>
+          </Container>
+          <Container title="circleSize">
+            <input
+              type="range"
+              max={1}
+              min={0.0001}
+              step={0.01}
+              className="w-full max-w-[300px]"
+              onChange={(ev) => {
+                setCircleSize(Number(ev.target.value))
+              }}
+            ></input>
+          </Container>
+          <Container title="strength">
+            <input
+              type="range"
+              max={1}
+              min={0.001}
+              step={0.01}
+              value={strength}
+              className="w-full max-w-[300px]"
+              onChange={(ev) => {
+                setStrength(Number(ev.target.value))
+              }}
+            ></input>
+          </Container>
+          <Container title="translate">
+            <input
+              max={1}
+              type="range"
+              step={0.01}
+              className="w-full max-w-[300px]"
+              onChange={(ev) => {
+                setTranslate(Number(ev.target.value))
+              }}
+            ></input>
+          </Container>
+          <Container title="rotate">
+            <input
+              max={1}
+              type="range"
+              step={0.01}
+              className="w-full max-w-[300px]"
+              onChange={(ev) => {
+                setRotate(Number(ev.target.value))
+              }}
+            ></input>
+          </Container>
+          <Container title="text">
+            <input
+              value={text}
+              className="w-full max-w-[300px] text-black"
+              onChange={(ev) => {
+                setText(ev.target.value)
+              }}
+            ></input>
+            <button
+              onClick={() => {
+                update({
+                  text
+                })
+                updateAll()
+              }}
+            >
+              set
+            </button>
+          </Container>
+          <Container title="text opacity">
+            <input
+              max={1}
+              type="range"
+              step={0.01}
+              className="w-full max-w-[300px]"
+              onChange={(ev) => {
+                update({ textOpacity: Number(ev.target.value) })
+              }}
+            ></input>
+          </Container>
+          <Container title="lowpass">
+            <input
+              max={1}
+              type="range"
+              step={0.01}
+              className="w-full max-w-[300px]"
+              onChange={(ev) => {
+                update({ lowpass: Number(ev.target.value) })
+              }}
+            ></input>
+          </Container>
+          <Container title="particle opacity">
+            <input
+              max={1}
+              type="range"
+              step={0.01}
+              className="w-full max-w-[300px]"
+              onChange={(ev) => {
+                update({ opacity: Number(ev.target.value) })
+              }}
+            ></input>
+          </Container>
+          <Container title="angle">
+            <input
+              max={1}
+              type="range"
+              step={0.01}
+              className="w-full max-w-[300px]"
+              onChange={(ev) => {
+                update({ angle: Number(ev.target.value) })
+              }}
+            ></input>
+          </Container>
+          <Container title="volume">
+            <input
+              max={1}
+              type="range"
+              step={0.01}
+              className="w-full max-w-[300px]"
+              onChange={(ev) => {
+                update({ volume: Number(ev.target.value) })
+              }}
+            ></input>
+          </Container>
 
-          {/* <button
+          <button
             onClick={() => {
-              setScene(scene + 1)
-            }}>
-            next
-          </button> */}
+              update({ setSample: 1 })
+            }}
+          >
+            resample
+          </button>
         </div>
       </div>
     </>
