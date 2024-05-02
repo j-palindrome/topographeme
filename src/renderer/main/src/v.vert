@@ -1,6 +1,3 @@
-#version 300 es
-precision mediump float;
-
 in vec2 a_positionIn;
 in vec2 a_velocity;
 in vec4 a_color;
@@ -28,37 +25,37 @@ uniform float angle;
 #define TWO_PI 6.28318
 
 vec2 posToUv(vec2 pos) {
-  vec2 flipped = (pos + 1.0f) * 0.5f;
-  flipped.y = 1.0f - flipped.y;
+  vec2 flipped = (pos + 1.0) * 0.5;
+  flipped.y = 1.0 - flipped.y;
   return flipped;
 }
 
 vec2 rotate(vec2 velocity, float decimalOfCircle) {
-  float theta = decimalOfCircle * PI * 2.0f;
+  float theta = decimalOfCircle * PI * 2.0;
   return vec2(cos(velocity.x * theta) - sin(velocity.y * theta), sin(velocity.x * theta) + cos(velocity.y * theta));
 }
 
 void main() {
   vec2 normVel = normalize(a_velocity);
   uv = posToUv(a_positionIn);
-  vec4 speedSample = texture(u_sampler, mod(uv + normVel * u_circleSize, 1.0f));
+  vec4 speedSample = texture(u_sampler, mod(uv + normVel * u_circleSize, 1.0));
 
   // sample the texture, where it is, and then in front. If the texture is BLACK at the location and WHITE in front, turn the heading to the right.
   vec4 textSample = texture(u_textTexture, uv);
-  vec4 textFrontSample = texture(u_textTexture, mod(uv + u_circleSize * normVel, 1.0f));
+  vec4 textFrontSample = texture(u_textTexture, mod(uv + u_circleSize * normVel, 1.0));
   if(textFrontSample.a > textSample.a) {
     normVel = rotate(normVel, u_strength + angle * TWO_PI);
   } else if(textFrontSample.a < textSample.a) {
-    normVel = rotate(normVel, u_strength * -1.0f - angle * TWO_PI);
+    normVel = rotate(normVel, u_strength * -1.0 - angle * TWO_PI);
   }
 
-  a_speedOut = (1.0f - pow(speedSample.a, 1.0f / (pow(u_strength, 2.0f) * u_resolution.x / 8.0f))) * u_speed * (u_resolution.x / 60.0f);
-  a_positionOut = mod(a_positionIn + normVel * a_speedOut / u_resolution.x + 1.0f, vec2(2.0f)) - 1.0f;
+  a_speedOut = (1.0 - pow(speedSample.a, 1.0 / (pow(u_strength, 2.0) * u_resolution.x / 8.0))) * u_speed * (u_resolution.x / 60.0);
+  a_positionOut = mod(a_positionIn + normVel * a_speedOut / u_resolution.x + 1.0, vec2(2.0)) - 1.0;
 
   a_audioOut = (a_speedIn - a_speedOut) * normVel.x;
   v_color = a_color;
   a_velocityOut = normVel;
 
-  gl_PointSize = 2.0f;
-  gl_Position = vec4(a_positionOut, 0.0f, 1.0f);
+  gl_PointSize = 2.0;
+  gl_Position = vec4(a_positionOut, 0.0, 1.0);
 }

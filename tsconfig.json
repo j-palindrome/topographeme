@@ -6,7 +6,8 @@
     "composite": true,
     "types": ["electron-vite/node"],
     "paths": {
-      "@util/*": ["./util/src/*"]
+      "@util/*": ["./util/src/*"],
+      "@animation-components/*": ["./util/animation-components/*"]
     }
   }
 }
