@@ -17,5 +17,6 @@ declare global {
     volume: number
     translate: number
     rotate: number
+    pauseVideo: number
   }
 }

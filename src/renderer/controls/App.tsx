@@ -21,22 +21,43 @@ export default function App() {
   const [lock, setLock] = useState(false)
   const [rotate, setRotate] = useState(0)
   const [translate, setTranslate] = useState(0)
+  const [pauseVideo, setPauseVideo] = useState(0)
   const updateAll = () => {
     update({
       speed: speed ** 2,
       circleSize: circleSize ** 3,
       strength: strength ** 5,
       rotate,
-      translate: translate ** 2
+      translate: translate ** 2,
+      pauseVideo: pauseVideo
     })
   }
   useEffect(() => {
     if (lock) return
     updateAll()
-  }, [lock, speed, circleSize, strength, translate, rotate])
+  }, [lock, speed, circleSize, strength, translate, rotate, pauseVideo])
+
   return (
     <div className="text-white font-mono">
       <button onClick={() => setLock(!lock)}>{lock ? 'unlock' : 'lock'}</button>
+      <div>
+        <button
+          onClick={(ev) => {
+            setPauseVideo(pauseVideo + 1)
+          }}
+        >
+          pause
+        </button>
+      </div>
+      <div>
+        <button
+          onClick={(ev) => {
+            setPauseVideo(0)
+          }}
+        >
+          reset
+        </button>
+      </div>
       <Container title="speed">
         <input
           type="range"

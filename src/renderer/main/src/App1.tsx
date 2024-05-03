@@ -31,7 +31,7 @@ export default function Scene() {
     rotation: 1,
     lowpass: 1,
     setSample: 0,
-    opacity: 1,
+    opacity: 0.2,
     angle: 0,
     volume: 1,
     translate: 0,
