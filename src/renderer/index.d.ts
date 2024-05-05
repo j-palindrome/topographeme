@@ -5,4 +5,6 @@ declare global {
     electron: ElectronAPI
     api: unknown
   }
+
+  const glsl = (input: string) => string
 }

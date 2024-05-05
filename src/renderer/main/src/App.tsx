@@ -1,27 +1,27 @@
 import {
   AudioCtx,
+  BufferSource,
   CameraInput,
   Canvas2D,
   CanvasGL,
   Elementary,
+  GLFilter,
   Mesh,
-  Processing,
+  Plane,
   Reactive,
-  Texture,
-  TopContextInfo
+  Texture
 } from '@animation-components/components'
-import vert from './v.vert?raw'
-import frag from './f.frag?raw'
+import { NodeRepr_t } from '@elemaudio/core'
 import { mtof, rad, scale } from '@util/math'
 import _ from 'lodash'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as twgl from 'twgl.js'
+import frag from './f.frag?raw'
 import { keys } from './util/scaling'
-import { NodeRepr_t } from '@elemaudio/core'
-import { probLog } from '@util/dom'
-import type p5 from 'p5'
-import { defaultFragColor, defaultVert2D } from '@util/shaders/utilities'
-import { glEs300 } from '../../../../util/src/shaders/utilities'
+import vert from './v.vert?raw'
+import rgb2hsl from 'glsl-hsl2rgb/index.glsl?raw'
+import { fixGlslify } from '@util/shaders/utilities'
+import { luma } from '@util/shaders/color'
 
 const text = `
 __
@@ -102,8 +102,11 @@ export default function App() {
     videoTex: WebGLTexture
     videoPauseTex: WebGLTexture
     textCanvas: CanvasRenderingContext2D
+    mainCanvas: WebGL2RenderingContext
     videoIn: HTMLVideoElement
-    videoPauses: CanvasRenderingContext2D
+    videoInCanvas: WebGL2RenderingContext
+    videoPauseReader: WebGLTexture
+    pauseCanvasVideo: WebGLTexture
   }
 
   return (
@@ -146,25 +149,87 @@ export default function App() {
 
         <CameraInput name="videoIn" width={1080} height={1080} />
 
-        <Canvas2D
-          name="videoPauses"
+        <CanvasGL
+          name="videoInCanvas"
           hidden
           className="absolute top-0 left-0 h-screen w-screen"
           height={1080}
           width={1080}
           resize={false}
-          setup={(ctx, { elements }) => {
-            const { videoIn } = elements as Names
+        >
+          <Texture
+            name="videoPauseReader"
+            width={1080}
+            height={1080}
+            draw={(self, gl, { elements }) => {
+              const { videoIn } = elements as Names
+              twgl.setTextureFromElement(gl, self, videoIn)
+            }}
+          />
+          <Plane
+            name="topPlane"
+            fragmentShader={
+              /*glsl*/ `
+              uniform sampler2D videoPauseReader;
+              void main() {
+                fragColor = texture(videoPauseReader, 1.0 - uv);
+              }`
+            }
+            draw={(self, gl, { elements }) => {
+              const { videoPauseReader } = elements as Names
+              self.draw({
+                videoPauseReader
+              })
+            }}
+          />
+          <GLFilter
+            name="blackAndWhite"
+            fragmentShader={
+              /*glsl*/ `
+              ${fixGlslify(rgb2hsl)}
+              ${luma}
 
-            if (!videoIn) return
+              uniform vec3 targetColor;
+              uniform float maxDistance;
+
+              void main() {
+                vec4 pixel = texture(canvas, 1.0 - uv);
+                if (distance(pixel.rgb, hsl2rgb(targetColor)) < maxDistance) {
+                  fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+                } else {
+                  float lumaPixel = luma(pixel);
+                  fragColor = vec4(lumaPixel, lumaPixel, lumaPixel, 1.0);
+                }
+                // fragColor = vec4(1.0, 1.0, 1.0, length(pixel.rgb - hsl2rgb(targetColor)) / 130.0);
+                // fragColor = vec4(1. - pixel.rgb, 2.0);
+              }`
+            }
+            draw={({ filter }) => {
+              filter({
+                targetColor: [0, 0, 0.8],
+                maxDistance: 0.4
+              })
+            }}
+          />
+        </CanvasGL>
+
+        <Canvas2D
+          name="pauseCanvas"
+          className="absolute top-0 left-0 h-screen w-screen"
+          height={1080}
+          width={1080}
+          resize={false}
+          draw={(ctx, { elements }) => {
+            const { videoInCanvas } = elements as Names
             ctx.globalAlpha = 0.5
-            ctx.drawImage(videoIn, 0, 0, ctx.canvas.width, ctx.canvas.height)
+            ctx.drawImage(videoInCanvas.canvas, 0, 0)
           }}
           deps={[pauseVideo]}
         />
+
         <CanvasGL
-          name="canvas"
-          className="absolute top-0 left-0 opacity-50 h-screen w-screen"
+          name="mainCanvas"
+          className="absolute top-0 left-0 h-screen w-screen"
           height={1080}
           width={1080}
           resize={false}
@@ -207,7 +272,7 @@ export default function App() {
             ]}
             draw={(self, gl, { time: { t, dt }, elements }) => {
               const { soundReading } = propsRef.current
-              const { tex, textTex, videoTex, videoPauseTex } = elements as Names
+              const { tex, textTex, videoTex } = elements as Names
 
               self.draw({
                 u_deltaTime: dt,
@@ -219,7 +284,7 @@ export default function App() {
                 u_strength: state.current.strength,
                 u_textTexture: textTex,
                 u_videoTexture: videoTex,
-                u_videoPauseTexture: videoPauseTex,
+                u_videoPauseTexture: videoTex,
                 opacity: state.current.opacity,
                 angle: state.current.angle
               })
@@ -242,18 +307,7 @@ export default function App() {
           <Texture
             name="tex"
             draw={(self, gl, time) => {
-              gl.bindTexture(gl.TEXTURE_2D, self)
-              gl.texImage2D(
-                gl.TEXTURE_2D,
-                0,
-                gl.RGBA,
-                gl.canvas.width,
-                gl.canvas.height,
-                0,
-                gl.RGBA,
-                gl.UNSIGNED_BYTE,
-                gl.canvas
-              )
+              twgl.setTextureFromElement(gl, self, gl.canvas as HTMLCanvasElement)
             }}
           />
           <Texture
@@ -267,20 +321,10 @@ export default function App() {
             name="videoTex"
             width={1080}
             height={1080}
-            setup={(self, gl, { elements }) => {
-              const { videoIn } = elements as Names
-              twgl.setTextureFromElement(gl, self, videoIn)
+            draw={(self, gl, { elements }) => {
+              const { videoInCanvas } = elements as Names
+              twgl.setTextureFromElement(gl, self, videoInCanvas.canvas as HTMLCanvasElement)
             }}
-          />
-          <Texture
-            name="videoPauseTex"
-            width={1080}
-            height={1080}
-            setup={(self, gl, { elements }) => {
-              const { videoPauses } = elements as Names
-              twgl.setTextureFromElement(gl, self, videoPauses.canvas)
-            }}
-            deps={[pauseVideo]}
           />
         </CanvasGL>
 
@@ -289,9 +333,6 @@ export default function App() {
             name="elementary"
             setup={({ node, core, el }, ctx) => {
               node.connect(ctx.destination)
-              const channel = () => el.mul(el.noise(), 0.2)
-              core.render(channel(), channel())
-              return () => node.disconnect()
             }}
             draw={({ core, el }) => {
               const { soundReading } = propsRef.current
@@ -362,6 +403,7 @@ export default function App() {
               core.render(channel(0), channel(1))
             }}
           />
+          <BufferSource name="soundPlayer" url={''} draw={(self, context) => {}} />
         </AudioCtx>
       </Reactive>
       <div className="top-0 left-0 h-screen w-screen absolute flex items-center justify-center">

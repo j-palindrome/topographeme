@@ -19,6 +19,8 @@ void main() {
 
   // fragColor = vec4(1.0, 1.0, 1.0, texture(u_videoTexture, uv).a * 0.3);
 
-  fragColor = vec4(1.0, 1.0, 1.0, luma(texture(u_videoPauseTexture, uv)) * 0.3);
+  fragColor = vec4(1.0, 1.0, 1.0, luma(texture(u_videoTexture, uv)));
+  // fragColor = texture(u_videoPauseTexture, uv);
   // fragColor = vec4(1.0, 1.0, 1.0, max(texture(u_textTexture, uv).a, opacity));
+  // fragColor = vec4(1.0, 1.0, 1.0, 1.0);
 }
