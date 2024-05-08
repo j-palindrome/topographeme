@@ -16,12 +16,20 @@ import { mtof, rad, scale } from '@util/math'
 import _ from 'lodash'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as twgl from 'twgl.js'
-import frag from './f.frag?raw'
 import { keys } from './util/scaling'
 import vert from './v.vert?raw'
 import rgb2hsl from 'glsl-hsl2rgb/index.glsl?raw'
 import { fixGlslify } from '@util/shaders/utilities'
 import { luma } from '@util/shaders/color'
+import audio1 from './assets/sounds/1.m4a'
+import audio2 from './assets/sounds/2.m4a'
+import audio3 from './assets/sounds/3.m4a'
+import audio4 from './assets/sounds/4.m4a'
+import audio5 from './assets/sounds/5.m4a'
+import audio6 from './assets/sounds/6.m4a'
+import audio7 from './assets/sounds/7.m4a'
+import audio8 from './assets/sounds/8.m4a'
+const sounds = [audio1, audio2, audio3, audio4, audio5, audio6, audio7]
 
 const text = `
 __
@@ -150,8 +158,8 @@ export default function App() {
         <CameraInput name="videoIn" width={1080} height={1080} />
 
         <CanvasGL
-          name="videoInCanvas"
           hidden
+          name="videoInCanvas"
           className="absolute top-0 left-0 h-screen w-screen"
           height={1080}
           width={1080}
@@ -173,6 +181,7 @@ export default function App() {
               uniform sampler2D videoPauseReader;
               void main() {
                 fragColor = texture(videoPauseReader, 1.0 - uv);
+                // fragColor = vec4(1, 1, 1, 1);
               }`
             }
             draw={(self, gl, { elements }) => {
@@ -242,7 +251,33 @@ export default function App() {
             name="particleSystem"
             drawMode={'points'}
             vertexShader={vert}
-            fragmentShader={frag}
+            fragmentShader={
+              /*glsl*/ `
+            in vec4 v_color;
+            in vec2 uv;
+            
+            uniform sampler2D u_textTexture;
+            uniform sampler2D u_videoPauseTexture;
+            uniform sampler2D u_videoTexture;
+            uniform sampler2D u_videoLayersTexture;
+            uniform vec2 u_resolution;
+            uniform float mix;
+            uniform float opacity;
+            
+            float luma(vec4 inputVector) {
+              return (inputVector.r + inputVector.b + inputVector.g) / 3.0;
+            }
+            
+            void main() {
+              if(distance(gl_PointCoord, vec2(0.5, 0.5)) > 0.5)
+                discard;
+            
+              // fragColor = vec4(1.0, 1.0, 1.0, texture(u_videoTexture, uv).a * 0.3);
+              fragColor = texture(u_videoPauseTexture, uv);
+              // fragColor = vec4(1.0, 1.0, 1.0, max(texture(u_textTexture, uv).a, opacity));
+              // fragColor = vec4(1.0, 1.0, 1.0, 0.3);
+            }`
+            }
             attributes={{
               a_positionIn: {
                 numComponents: 2,
@@ -329,7 +364,7 @@ export default function App() {
         </CanvasGL>
 
         <AudioCtx name="audio">
-          <Elementary
+          {/* <Elementary
             name="elementary"
             setup={({ node, core, el }, ctx) => {
               node.connect(ctx.destination)
@@ -402,8 +437,27 @@ export default function App() {
               }
               core.render(channel(0), channel(1))
             }}
+          /> */}
+          <BufferSource
+            name="soundPlayer"
+            url={''}
+            draw={(self, context) => {
+              if (pauseVideo === 0) return
+
+              setTimeout(() => {
+                fetch(sounds[pauseVideo - 1]).then(async (res) => {
+                  const channel = await res.arrayBuffer()
+                  const newBuffer = await context.decodeAudioData(channel)
+                  const newSource = new AudioBufferSourceNode(context, { buffer: newBuffer })
+                  newSource.connect(context.destination)
+                  newSource.start()
+                  self.buffer = newBuffer
+                  self.source = newSource
+                })
+              }, 5000)
+            }}
+            deps={[pauseVideo]}
           />
-          <BufferSource name="soundPlayer" url={''} draw={(self, context) => {}} />
         </AudioCtx>
       </Reactive>
       <div className="top-0 left-0 h-screen w-screen absolute flex items-center justify-center">
