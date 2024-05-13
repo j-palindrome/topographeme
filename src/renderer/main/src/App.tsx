@@ -29,10 +29,10 @@ import audio5 from './assets/sounds/5.m4a'
 import audio6 from './assets/sounds/6.m4a'
 import audio7 from './assets/sounds/7.m4a'
 import audio8 from './assets/sounds/8.m4a'
-const sounds = [audio1, audio2, audio3, audio4, audio5, audio6, audio7]
+const sounds = [audio1, audio2, audio3, audio4, audio5, audio6, audio7, audio8]
 
 const text = `
-__
+...
 
 One or two other people waited far down the platform, a man in a hooded sweatshirt was passed out or had passed away on one of the wooden seats, but otherwise we were alone, having just said our passionate farewell, staring at each other’s ghost in the quiet tunnel. 
 
@@ -72,16 +72,9 @@ export default function App() {
     speed: 0.4,
     circleSize: 0.2,
     strength: 0.5,
-    text: '',
-    textOpacity: 0,
-    rotation: 1,
     lowpass: 1,
-    setSample: 0,
-    opacity: 0.2,
-    angle: 0,
     volume: 1,
-    translate: 0,
-    rotate: 0,
+    playAudio: 0,
     pauseVideo: 0
   })
   const [pauseVideo, setPauseVideo] = useState(0)
@@ -106,7 +99,6 @@ export default function App() {
 
   type Names = {
     tex: WebGLTexture
-    textTex: WebGLTexture
     videoTex: WebGLTexture
     videoPauseTex: WebGLTexture
     textCanvas: CanvasRenderingContext2D
@@ -120,41 +112,6 @@ export default function App() {
   return (
     <>
       <Reactive loop={true}>
-        <Canvas2D
-          name="textCanvas"
-          hidden
-          height={1080}
-          width={1080}
-          resize={false}
-          setup={(ctx) => {
-            const w = ctx.canvas.width
-            const h = ctx.canvas.height
-            ctx.resetTransform()
-            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
-            ctx.font = `${20}px "Andale Mono"`
-            ctx.textAlign = 'left'
-            let i = 0
-            ctx.textAlign = 'center'
-            ctx.font = `${(w * 2) / state.current.text.length}px "Andale Mono"`
-            ctx.translate(w / 2, h / 2)
-
-            if (state.current.text) {
-              ctx.fillStyle = 'white'
-              for (let i = 1; i < 16; i++) {
-                ctx.font = `${(w * 2) / state.current.text.length / i}px "Andale Mono"`
-                ctx.fillText(state.current.text, 0, (w * 2) / state.current.text.length / 2 / i, w)
-                ctx.translate(
-                  (i % 2 ? state.current.translate : -state.current.translate * 0.87) * w,
-                  0
-                )
-                ctx.rotate(
-                  (i % 2 ? state.current.rotate : -state.current.rotate * 0.53) * Math.PI * 2
-                )
-              }
-            }
-          }}
-        />
-
         <CameraInput name="videoIn" width={1080} height={1080} />
 
         <CanvasGL
@@ -209,8 +166,6 @@ export default function App() {
                   float lumaPixel = luma(pixel);
                   fragColor = vec4(lumaPixel, lumaPixel, lumaPixel, 1.0);
                 }
-                // fragColor = vec4(1.0, 1.0, 1.0, length(pixel.rgb - hsl2rgb(targetColor)) / 130.0);
-                // fragColor = vec4(1. - pixel.rgb, 2.0);
               }`
             }
             draw={({ filter }) => {
@@ -256,10 +211,7 @@ export default function App() {
             in vec4 v_color;
             in vec2 uv;
             
-            uniform sampler2D u_textTexture;
-            uniform sampler2D u_videoPauseTexture;
             uniform sampler2D u_videoTexture;
-            uniform sampler2D u_videoLayersTexture;
             uniform vec2 u_resolution;
             uniform float mix;
             uniform float opacity;
@@ -272,10 +224,8 @@ export default function App() {
               if(distance(gl_PointCoord, vec2(0.5, 0.5)) > 0.5)
                 discard;
             
-              // fragColor = vec4(1.0, 1.0, 1.0, texture(u_videoTexture, uv).a * 0.3);
-              fragColor = texture(u_videoPauseTexture, uv);
-              // fragColor = vec4(1.0, 1.0, 1.0, max(texture(u_textTexture, uv).a, opacity));
-              // fragColor = vec4(1.0, 1.0, 1.0, 0.3);
+              fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+              // fragColor = vec4(1, 1, 1, 0.5);
             }`
             }
             attributes={{
@@ -307,7 +257,7 @@ export default function App() {
             ]}
             draw={(self, gl, { time: { t, dt }, elements }) => {
               const { soundReading } = propsRef.current
-              const { tex, textTex, videoTex } = elements as Names
+              const { tex, videoTex } = elements as Names
 
               self.draw({
                 u_deltaTime: dt,
@@ -317,11 +267,7 @@ export default function App() {
                 u_speed: state.current.speed,
                 u_resolution: [gl.canvas.width, gl.canvas.height],
                 u_strength: state.current.strength,
-                u_textTexture: textTex,
-                u_videoTexture: videoTex,
-                u_videoPauseTexture: videoTex,
-                opacity: state.current.opacity,
-                angle: state.current.angle
+                u_videoTexture: videoTex
               })
 
               soundReading.previousSpeeds.set(speeds)
@@ -346,13 +292,6 @@ export default function App() {
             }}
           />
           <Texture
-            name="textTex"
-            draw={(self, gl, { elements }) => {
-              const { textCanvas } = elements as Names
-              twgl.setTextureFromElement(gl, self, textCanvas.canvas)
-            }}
-          />
-          <Texture
             name="videoTex"
             width={1080}
             height={1080}
@@ -364,7 +303,7 @@ export default function App() {
         </CanvasGL>
 
         <AudioCtx name="audio">
-          {/* <Elementary
+          <Elementary
             name="elementary"
             setup={({ node, core, el }, ctx) => {
               node.connect(ctx.destination)
@@ -377,24 +316,6 @@ export default function App() {
               const averageSpeed = _.sum(speeds) / speeds.length
 
               const PAN_CHANGE_SCALE = 0.1
-              const noise = () => {
-                const signal = el.pinknoise()
-                let delayer = (i: number, signal: NodeRepr_t, amount: number) =>
-                  el.delay(
-                    { size: 44100 },
-                    el.ms2samps(el.const({ key: `delay-${i}`, value: amount })),
-                    0.1,
-                    signal
-                  )
-                let start = signal
-                const letters = state.current.text.split('').map((letter) => keys.indexOf(letter))
-
-                for (let i = Math.max(letters.length - 10, 0); i < letters.length; i++) {
-                  start = delayer(i, start, 1000 / mtof(scale(letters[i], 0, 48, 30, 127)))
-                }
-
-                return start
-              }
               const channel = (chan: 0 | 1) => {
                 return el.mul(
                   el.mul(
@@ -414,7 +335,7 @@ export default function App() {
                           })
                         ),
                         scale(averageSpeed, 0, 20, 0, 1, 2),
-                        noise()
+                        el.pinknoise()
                       )
                     ),
                     // el.pinknoise()
@@ -437,7 +358,7 @@ export default function App() {
               }
               core.render(channel(0), channel(1))
             }}
-          /> */}
+          />
           <BufferSource
             name="soundPlayer"
             url={''}

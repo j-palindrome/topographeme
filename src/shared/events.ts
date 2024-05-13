@@ -7,16 +7,9 @@ declare global {
     speed: number
     circleSize: number
     strength: number
-    text: string
-    textOpacity: number
-    rotation: number
     lowpass: number
-    setSample: number
-    opacity: number
-    angle: number
     volume: number
-    translate: number
-    rotate: number
     pauseVideo: number
+    playAudio: number
   }
 }
