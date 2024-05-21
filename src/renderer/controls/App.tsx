@@ -33,7 +33,7 @@ export default function App() {
   useEffect(() => {
     if (lock) return
     updateAll()
-  }, [lock, speed, circleSize, strength, pauseVideo])
+  }, [lock, speed, circleSize, strength, pauseVideo, playAudio])
 
   return (
     <div className="text-white font-mono">

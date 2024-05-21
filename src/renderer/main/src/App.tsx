@@ -1,26 +1,14 @@
-import {
-  AudioCtx,
-  BufferSource,
-  CameraInput,
-  Canvas2D,
-  CanvasGL,
-  Elementary,
-  GLFilter,
-  Mesh,
-  Plane,
-  Reactive,
-  Texture
-} from '@animation-components/components'
-import { NodeRepr_t } from '@elemaudio/core'
+import { Reactive } from '@reactive/blocks/ParentChildComponents'
+import AudioCtx, { BufferSource } from '@reactive/components/AudioCtx'
+import CameraInput from '@reactive/components/CameraInput'
+import Canvas2D from '@reactive/components/Canvas2D'
+import CanvasGL, { GLFilter, Mesh, Plane, Texture } from '@reactive/components/CanvasGL'
+import Elementary from '@reactive/components/Elementary'
 import { mtof, rad, scale } from '@util/math'
+import { luma } from '@util/shaders/color'
 import _ from 'lodash'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as twgl from 'twgl.js'
-import { keys } from './util/scaling'
-import vert from './v.vert?raw'
-import rgb2hsl from 'glsl-hsl2rgb/index.glsl?raw'
-import { fixGlslify } from '@util/shaders/utilities'
-import { luma } from '@util/shaders/color'
 import audio1 from './assets/sounds/1.m4a'
 import audio2 from './assets/sounds/2.m4a'
 import audio3 from './assets/sounds/3.m4a'
@@ -29,6 +17,8 @@ import audio5 from './assets/sounds/5.m4a'
 import audio6 from './assets/sounds/6.m4a'
 import audio7 from './assets/sounds/7.m4a'
 import audio8 from './assets/sounds/8.m4a'
+import rgb2hsl from 'glsl-hsl2rgb/index.glsl?raw'
+import { fixGlslify } from '@util/shaders/utilities'
 const sounds = [audio1, audio2, audio3, audio4, audio5, audio6, audio7, audio8]
 
 const text = `
@@ -73,16 +63,20 @@ export default function App() {
     circleSize: 0.2,
     strength: 0.5,
     lowpass: 1,
-    volume: 1,
+    volume: 0,
     playAudio: 0,
     pauseVideo: 0
   })
   const [pauseVideo, setPauseVideo] = useState(0)
+  const [playAudio, setPlayAudio] = useState(0)
   useEffect(() => {
     window.electron.ipcRenderer.on('set', (_event, newState: Partial<AppState>) => {
       state.current = { ...state.current, ...newState }
       if (typeof newState.pauseVideo !== 'undefined') {
         setPauseVideo(newState.pauseVideo)
+      }
+      if (typeof newState.playAudio !== 'undefined') {
+        setPlayAudio(newState.playAudio)
       }
     })
   }, [])
@@ -102,6 +96,7 @@ export default function App() {
     videoTex: WebGLTexture
     videoPauseTex: WebGLTexture
     textCanvas: CanvasRenderingContext2D
+    pauseCanvas: CanvasRenderingContext2D
     mainCanvas: WebGL2RenderingContext
     videoIn: HTMLVideoElement
     videoInCanvas: WebGL2RenderingContext
@@ -205,28 +200,79 @@ export default function App() {
           <Mesh
             name="particleSystem"
             drawMode={'points'}
-            vertexShader={vert}
+            vertexShader={
+              /*glsl*/ `
+              uniform float dt;
+              uniform vec2 resolution;
+              uniform sampler2D videoTex;
+
+              in vec2 a_positionIn;
+              in vec2 a_velocity;
+
+              out vec2 a_positionOut; 
+              out vec2 a_velocityOut;
+              out float a_speedOut;
+              out float a_audioOut;
+              out vec2 vUv;
+
+              out float v_dt;
+
+              vec2 normalizePos(vec2 pos) {
+                return (pos + 1.0) * 0.5;
+              }
+
+              vec2 posToUv(vec2 pos) {
+                return 1.0 - normalizePos(pos);
+              }
+
+              ${luma}
+
+              void main() {
+                
+                float lumaSample = luma(texture(videoTex, posToUv(a_positionIn)));
+                float sampleSpeed = max(1.0 - pow(lumaSample, 1.0 / 4.0), 0.01);
+                vec2 velocity = a_velocity * dt / 1000.0 * 1e-1 * sampleSpeed;
+
+                vec2 positionUv = normalizePos(a_positionIn);
+                vec2 position = mod(positionUv + velocity, 1.0);
+
+                a_positionOut = position * 2.0 - 1.0;
+                a_velocityOut = a_velocity;
+                a_speedOut = length(velocity);
+                v_dt = dt;
+                vUv = posToUv(a_positionOut);
+
+                gl_Position = vec4(a_positionOut, 1.0, 1.0);
+                gl_PointSize = 1.0;
+              }
+            `
+            }
             fragmentShader={
               /*glsl*/ `
-            in vec4 v_color;
-            in vec2 uv;
-            
-            uniform sampler2D u_videoTexture;
-            uniform vec2 u_resolution;
-            uniform float mix;
-            uniform float opacity;
-            
-            float luma(vec4 inputVector) {
-              return (inputVector.r + inputVector.b + inputVector.g) / 3.0;
-            }
-            
-            void main() {
-              if(distance(gl_PointCoord, vec2(0.5, 0.5)) > 0.5)
-                discard;
-            
-              fragColor = vec4(0.0, 0.0, 0.0, 1.0);
-              // fragColor = vec4(1, 1, 1, 0.5);
-            }`
+              uniform sampler2D videoTex;
+              uniform sampler2D pauseTex;
+
+              in vec2 vUv;
+              
+              float luma(vec4 inputVector) {
+                return (inputVector.r + inputVector.b + inputVector.g) / 3.0;
+              }
+              
+              void main() {
+                if(distance(gl_PointCoord, vec2(0.5, 0.5)) > 0.5)
+                  discard;
+                
+                vec4 pauseColor = texture(pauseTex, vec2(1.0 - vUv.x, vUv.y));
+                vec4 videoColor = texture(videoTex, vUv);
+                vec3 color;
+                if (luma(pauseColor) > 0.2) {
+                  color = vec3(0, 0, 0);
+                } else {
+                  color = vec3(1, 1, 1);
+                }
+                fragColor = vec4(color, 1.0);
+                // fragColor = pauseColor;
+              }`
             }
             attributes={{
               a_positionIn: {
@@ -257,17 +303,13 @@ export default function App() {
             ]}
             draw={(self, gl, { time: { t, dt }, elements }) => {
               const { soundReading } = propsRef.current
-              const { tex, videoTex } = elements as Names
+              const { tex, videoTex, pauseTex } = elements
 
               self.draw({
-                u_deltaTime: dt,
-                u_time: t,
-                u_sampler: tex,
-                u_circleSize: state.current.circleSize,
-                u_speed: state.current.speed,
-                u_resolution: [gl.canvas.width, gl.canvas.height],
-                u_strength: state.current.strength,
-                u_videoTexture: videoTex
+                dt,
+                resolution: [gl.drawingBufferHeight, gl.drawingBufferWidth],
+                videoTex,
+                pauseTex
               })
 
               soundReading.previousSpeeds.set(speeds)
@@ -299,6 +341,14 @@ export default function App() {
               const { videoInCanvas } = elements as Names
               twgl.setTextureFromElement(gl, self, videoInCanvas.canvas as HTMLCanvasElement)
             }}
+          />
+          <Texture
+            name="pauseTex"
+            draw={(self, gl, { elements }) => {
+              const { pauseCanvas } = elements
+              twgl.setTextureFromElement(gl, self, pauseCanvas.canvas as HTMLCanvasElement)
+            }}
+            deps={[pauseVideo]}
           />
         </CanvasGL>
 
@@ -362,22 +412,24 @@ export default function App() {
           <BufferSource
             name="soundPlayer"
             url={''}
-            draw={(self, context) => {
-              if (pauseVideo === 0) return
-
-              setTimeout(() => {
-                fetch(sounds[pauseVideo - 1]).then(async (res) => {
-                  const channel = await res.arrayBuffer()
-                  const newBuffer = await context.decodeAudioData(channel)
-                  const newSource = new AudioBufferSourceNode(context, { buffer: newBuffer })
-                  newSource.connect(context.destination)
-                  newSource.start()
-                  self.buffer = newBuffer
-                  self.source = newSource
-                })
-              }, 5000)
+            setup={(self, context) => {
+              const gain = new GainNode(context)
+              gain.gain.value = 0.05
+              gain.connect(context.destination)
+              return gain
             }}
-            deps={[pauseVideo]}
+            draw={(self, context, mainCtx, gain) => {
+              fetch(sounds[playAudio - 1]).then(async (res) => {
+                const channel = await res.arrayBuffer()
+                const newBuffer = await context.decodeAudioData(channel)
+                const newSource = new AudioBufferSourceNode(context, { buffer: newBuffer })
+                newSource.connect(gain)
+                newSource.start()
+                self.buffer = newBuffer
+                self.source = newSource
+              })
+            }}
+            deps={[playAudio]}
           />
         </AudioCtx>
       </Reactive>

@@ -29,33 +29,5 @@ vec2 posToUv(vec2 pos) {
   return flipped;
 }
 
-vec2 rotate(vec2 velocity, float decimalOfCircle) {
-  float theta = decimalOfCircle * PI * 2.0;
-  return vec2(cos(velocity.x * theta) - sin(velocity.y * theta), sin(velocity.x * theta) + cos(velocity.y * theta));
-}
-
 void main() {
-  vec2 normVel = normalize(a_velocity);
-  uv = posToUv(a_positionIn);
-  // vec4 speedSample = texture(u_videoTexture, mod(uv + normVel * u_circleSize, 1.0));
-  vec4 speedSample = texture(u_videoTexture, uv);
-
-  // sample the texture, where it is, and then in front. If the texture is BLACK at the location and WHITE in front, turn the heading to the right.
-  vec4 textSample = texture(u_videoTexture, uv);
-  vec4 textFrontSample = texture(u_videoTexture, mod(uv + u_circleSize * normVel, 1.0));
-  if(textFrontSample.a > textSample.a) {
-    normVel = rotate(normVel, u_strength + angle * TWO_PI);
-  } else if(textFrontSample.a < textSample.a) {
-    normVel = rotate(normVel, u_strength * -1.0 - angle * TWO_PI);
-  }
-
-  a_speedOut = max((1.0 - pow(speedSample.a, 1.0 / (pow(u_strength, 2.0) * u_resolution.x / 8.0))) * u_speed * (u_resolution.x / 60.0), 0.001);
-  a_positionOut = mod(a_positionIn + normVel * a_speedOut / u_resolution.x + 1.0, vec2(2.0)) - 1.0;
-
-  a_audioOut = (a_speedIn - a_speedOut) * normVel.x;
-  v_color = a_color;
-  a_velocityOut = normVel;
-
-  gl_PointSize = 2.0;
-  gl_Position = vec4(a_positionOut, 0.0, 1.0);
 }
