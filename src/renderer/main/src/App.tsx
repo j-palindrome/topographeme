@@ -165,7 +165,7 @@ export default function App() {
             }
             draw={({ filter }) => {
               filter({
-                targetColor: [0, 0, 0.8],
+                targetColor: [0, 0, 0.9],
                 maxDistance: 0.4
               })
             }}
