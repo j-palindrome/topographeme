@@ -1,9 +1,9 @@
-import { Reactive } from '@reactive/blocks/ParentChildComponents'
-import AudioCtx, { BufferSource } from '@reactive/components/AudioCtx'
-import CameraInput from '@reactive/components/CameraInput'
-import Canvas2D from '@reactive/components/Canvas2D'
-import CanvasGL, { GLFilter, Mesh, Plane, Texture } from '@reactive/components/CanvasGL'
-import Elementary from '@reactive/components/Elementary'
+import { Reactive } from 'reactive-frames/src/blocks/FrameChildComponents'
+import AudioCtx, { BufferSource } from 'reactive-frames/src/frames/AudioCtx'
+import CameraInput from 'reactive-frames/src/frames/CameraInput'
+import Canvas2D from 'reactive-frames/src/frames/Canvas2D'
+import CanvasGL, { Mesh, Plane, Texture } from 'reactive-frames/src/frames/CanvasGL'
+import Elementary from 'reactive-frames/src/frames/Elementary'
 import { mtof, rad, scale } from '@util/math'
 import { luma } from '@util/shaders/color'
 import _ from 'lodash'
@@ -115,7 +115,7 @@ export default function App() {
           className="absolute top-0 left-0 h-screen w-screen"
           height={1080}
           width={1080}
-          resize={false}
+          noResize
         >
           <Texture
             name="videoPauseReader"
@@ -143,33 +143,6 @@ export default function App() {
               })
             }}
           />
-          <GLFilter
-            name="blackAndWhite"
-            fragmentShader={
-              /*glsl*/ `
-              ${fixGlslify(rgb2hsl)}
-              ${luma}
-
-              uniform vec3 targetColor;
-              uniform float maxDistance;
-
-              void main() {
-                vec4 pixel = texture(canvas, 1.0 - uv);
-                if (distance(pixel.rgb, hsl2rgb(targetColor)) < maxDistance) {
-                  fragColor = vec4(0.0, 0.0, 0.0, 1.0);
-                } else {
-                  float lumaPixel = luma(pixel);
-                  fragColor = vec4(lumaPixel, lumaPixel, lumaPixel, 1.0);
-                }
-              }`
-            }
-            draw={({ filter }) => {
-              filter({
-                targetColor: [0, 0, 0.9],
-                maxDistance: 0.4
-              })
-            }}
-          />
         </CanvasGL>
 
         <Canvas2D
@@ -177,7 +150,7 @@ export default function App() {
           className="absolute top-0 left-0 h-screen w-screen"
           height={1080}
           width={1080}
-          resize={false}
+          noResize
           draw={(ctx, { elements }) => {
             const { videoInCanvas } = elements as Names
             ctx.globalAlpha = 0.5
@@ -191,7 +164,7 @@ export default function App() {
           className="absolute top-0 left-0 h-screen w-screen"
           height={1080}
           width={1080}
-          resize={false}
+          noResize
           setup={(gl) => {
             gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
             gl.enable(gl.BLEND)
@@ -301,12 +274,12 @@ export default function App() {
               ['a_speedOut', 'a_speedIn'],
               ['a_audioOut', 'a_audioOut']
             ]}
-            draw={(self, gl, { time: { t, dt }, elements }) => {
+            draw={(self, gl, { time, deltaTime, elements }) => {
               const { soundReading } = propsRef.current
               const { tex, videoTex, pauseTex } = elements
 
               self.draw({
-                dt,
+                dt: deltaTime,
                 resolution: [gl.drawingBufferHeight, gl.drawingBufferWidth],
                 videoTex,
                 pauseTex
@@ -418,7 +391,7 @@ export default function App() {
               gain.connect(context.destination)
               return gain
             }}
-            draw={(self, context, mainCtx, gain) => {
+            draw={(self, context, { elements: { gain } }) => {
               fetch(sounds[playAudio - 1]).then(async (res) => {
                 const channel = await res.arrayBuffer()
                 const newBuffer = await context.decodeAudioData(channel)
